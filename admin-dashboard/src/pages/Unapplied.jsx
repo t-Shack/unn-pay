@@ -356,31 +356,19 @@ function ResolveDialog({ item, onClose, onResolved }) {
             return (
               <label
                 key={option.value}
-                style={{
-                  display: 'flex',
-                  gap: 9,
-                  alignItems: 'flex-start',
-                  padding: '9px 10px',
-                  border: '1px solid var(--line)',
-                  borderRadius: 8,
-                  marginBottom: 6,
-                  cursor: disabled ? 'not-allowed' : 'pointer',
-                  opacity: disabled ? 0.5 : 1,
-                  background: resolution === option.value ? 'var(--green-light)' : '#fff',
-                  color: 'var(--ink)',
-                  fontWeight: 500,
-                }}
+                className={`option${resolution === option.value ? ' option--selected' : ''}${
+                  disabled ? ' option--disabled' : ''
+                }`}
               >
                 <input
                   type="radio"
                   name="resolution"
-                  style={{ width: 'auto', marginTop: 3 }}
                   checked={resolution === option.value}
                   disabled={disabled}
                   onChange={() => setResolution(option.value)}
                 />
                 <span>
-                  <span style={{ fontWeight: 600 }}>{option.label}</span>
+                  <span style={{ fontWeight: 800 }}>{option.label}</span>
                   <span className="small muted" style={{ display: 'block', fontWeight: 400 }}>
                     {disabled
                       ? option.value === 'applied_to_intended_fee'

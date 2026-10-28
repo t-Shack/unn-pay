@@ -30,7 +30,8 @@ class PaymentScreen extends StatefulWidget {
   State<PaymentScreen> createState() => _PaymentScreenState();
 }
 
-class _PaymentScreenState extends State<PaymentScreen> with WidgetsBindingObserver {
+class _PaymentScreenState extends State<PaymentScreen>
+    with WidgetsBindingObserver {
   late Payment _payment;
   Timer? _poll;
   Timer? _countdown;
@@ -74,15 +75,19 @@ class _PaymentScreenState extends State<PaymentScreen> with WidgetsBindingObserv
   }
 
   bool get _isFinal =>
-      _payment.isSettled || _payment.needsAttention || _payment.status == 'Failed';
+      _payment.isSettled ||
+      _payment.needsAttention ||
+      _payment.status == 'Failed';
 
   Future<void> _refresh({bool manual = false}) async {
     if (manual) setState(() => _checking = true);
     try {
-      final Map<String, dynamic> response = await widget.state.api.payment(_payment.reference);
+      final Map<String, dynamic> response =
+          await widget.state.api.payment(_payment.reference);
       if (!mounted) return;
 
-      final Payment updated = Payment.fromJson(response['payment'] as Map<String, dynamic>);
+      final Payment updated =
+          Payment.fromJson(response['payment'] as Map<String, dynamic>);
       final bool justSettled = !_payment.isSettled && updated.isSettled;
 
       setState(() {
@@ -116,114 +121,182 @@ class _PaymentScreenState extends State<PaymentScreen> with WidgetsBindingObserv
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Make payment'),
+      appBar: ui.ScreenHeader(
+        title: _payment.isSettled ? 'Payment received' : 'Make payment',
         actions: <Widget>[
-          IconButton(
-            tooltip: 'Check now',
-            onPressed: _checking ? null : () => _refresh(manual: true),
-            icon: _checking
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.refresh_rounded),
-          ),
+          if (_checking)
+            const SizedBox(
+              width: 44,
+              height: 44,
+              child: Padding(
+                padding: EdgeInsets.all(12),
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            )
+          else
+            ui.HeaderButton(
+              icon: Icons.refresh_rounded,
+              tooltip: 'Check now',
+              onPressed: () => _refresh(manual: true),
+            ),
         ],
       ),
       body: RefreshIndicator(
         onRefresh: () => _refresh(manual: true),
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
           children: <Widget>[
             if (_error != null) ...<Widget>[
               ui.NoticeBanner(message: _error!, tone: ui.StatusTone.danger),
               const SizedBox(height: 14),
             ],
-            _statusCard(),
-            const SizedBox(height: 14),
             if (_payment.isSettled)
               _settled()
-            else if (_payment.needsAttention)
-              _underReview()
-            else if (_payment.status == 'Failed')
-              const ui.NoticeBanner(
-                title: 'This payment did not go through',
-                message:
-                    'No money was taken. You can start the payment again from the home screen.',
-                tone: ui.StatusTone.danger,
-              )
-            else if (_payment.isExpired)
-              const ui.NoticeBanner(
-                title: 'This reference has expired',
-                message:
-                    'Do not pay to this account number. Start the payment again to get a fresh '
-                    'reference and account number. If you have already paid, contact the Bursary '
-                    'and quote this reference — your money is recorded and will be applied.',
-                tone: ui.StatusTone.danger,
-              )
-            else
-              _instructions(),
+            else ...<Widget>[
+              _summary(),
+              const SizedBox(height: 14),
+              if (_payment.needsAttention)
+                _underReview()
+              else if (_payment.status == 'Failed')
+                const ui.NoticeBanner(
+                  title: 'This payment did not go through',
+                  message:
+                      'No money was taken. You can start the payment again from the home screen.',
+                  tone: ui.StatusTone.danger,
+                )
+              else if (_payment.isExpired)
+                const ui.NoticeBanner(
+                  title: 'This reference has expired',
+                  message:
+                      'Do not pay to this account number. Start the payment again to get a fresh '
+                      'reference and account number. If you have already paid, contact the Bursary '
+                      'and quote this reference — your money is recorded and will be applied.',
+                  tone: ui.StatusTone.danger,
+                )
+              else
+                _instructions(),
+            ],
           ],
         ),
       ),
     );
   }
 
-  Widget _statusCard() {
-    final (String label, ui.StatusTone tone, IconData icon) = switch (_payment) {
-      final Payment p when p.isSettled => ('Paid in full', ui.StatusTone.good, Icons.check_circle),
-      final Payment p when p.needsAttention =>
-        ('Needs attention', ui.StatusTone.warning, Icons.error_outline),
-      final Payment p when p.status == 'Failed' => ('Failed', ui.StatusTone.danger, Icons.cancel),
-      final Payment p when p.isExpired => ('Expired', ui.StatusTone.danger, Icons.timer_off),
-      _ => ('Waiting for your payment', ui.StatusTone.neutral, Icons.hourglass_empty),
+  /// The fee, the amount, and where the payment stands.
+  Widget _summary() {
+    final bool live = _payment.isPending && !_payment.isExpired;
+
+    final (String label, Color dot) = switch (_payment) {
+      final Payment p when p.needsAttention => (
+          'Needs attention',
+          const Color(0xFFEA580C)
+        ),
+      final Payment p when p.status == 'Failed' => (
+          'Payment failed',
+          UnnTheme.red
+        ),
+      final Payment p when p.isExpired => ('Reference expired', UnnTheme.muted),
+      _ => ('Waiting for your transfer', UnnTheme.gold),
     };
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
           children: <Widget>[
-            Row(
-              children: <Widget>[
-                Icon(icon, size: 20, color: UnnTheme.muted),
-                const SizedBox(width: 8),
-                ui.StatusChip(label: label, tone: tone),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Text(
-              _payment.feeItemName ?? 'Fee payment',
-              style: const TextStyle(fontSize: 14.5, color: UnnTheme.muted),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              _payment.expectedAmountFormatted,
-              style: const TextStyle(
-                fontSize: 32,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -0.8,
-              ),
-            ),
-            if (_payment.isPending && !_payment.isExpired) ...<Widget>[
-              const SizedBox(height: 12),
-              Row(
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  const Icon(Icons.schedule_rounded, size: 15, color: UnnTheme.muted),
-                  const SizedBox(width: 6),
                   Text(
-                    'Expires in ${_formatRemaining(_payment.timeRemaining)}',
-                    style: const TextStyle(fontSize: 13, color: UnnTheme.muted),
+                    _payment.feeItemName ?? 'Fee payment',
+                    style: const TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w600,
+                      color: UnnTheme.muted,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    _payment.expectedAmountFormatted,
+                    style: const TextStyle(
+                      fontSize: 34,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -1.1,
+                      fontFeatures: UnnTheme.tabular,
+                    ),
                   ),
                 ],
               ),
-            ],
+            ),
+            if (live)
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: UnnTheme.goldSoft,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Column(
+                  children: <Widget>[
+                    const Text(
+                      'EXPIRES IN',
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.4,
+                        color: UnnTheme.amber,
+                      ),
+                    ),
+                    Text(
+                      _clock(_payment.timeRemaining),
+                      style:
+                          UnnTheme.monoStyle(size: 15, color: UnnTheme.amber),
+                    ),
+                  ],
+                ),
+              ),
           ],
         ),
-      ),
+        const SizedBox(height: 14),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(
+            children: <Widget>[
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: dot,
+                  shape: BoxShape.circle,
+                  boxShadow: <BoxShadow>[
+                    BoxShadow(
+                        color: dot.withValues(alpha: 0.3), spreadRadius: 4,),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                      fontSize: 13.5, fontWeight: FontWeight.w700,),
+                ),
+              ),
+              if (live)
+                const Text(
+                  'Updates automatically',
+                  style: TextStyle(fontSize: 12, color: UnnTheme.muted),
+                ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -240,47 +313,135 @@ class _PaymentScreenState extends State<PaymentScreen> with WidgetsBindingObserv
       );
     }
 
+    final String account = _payment.virtualAccountNumber ?? '—';
+
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        Card(
+        ui.ForestCard(
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              const Padding(
-                padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
-                child: Text(
-                  'Transfer to this account',
-                  style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.w700),
+              Row(
+                children: <Widget>[
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(11),
+                    ),
+                    child: const Icon(Icons.account_balance_outlined,
+                        color: Colors.white, size: 19,),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        const Text(
+                          'Transfer to',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                            color: UnnTheme.onForestMuted,
+                          ),
+                        ),
+                        Text(
+                          _payment.virtualAccountBank ?? '—',
+                          style: const TextStyle(
+                              fontSize: 14, fontWeight: FontWeight.w700,),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: UnnTheme.gold.withValues(alpha: 0.18),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: const Text(
+                      'This payment only',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: UnnTheme.gold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              const Text(
+                'Account number',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                  color: UnnTheme.onForestMuted,
                 ),
               ),
-              const Padding(
-                padding: EdgeInsets.fromLTRB(16, 0, 16, 10),
-                child: Text(
-                  'This account belongs to the University and is for this payment only.',
-                  style: TextStyle(fontSize: 13, color: UnnTheme.muted, height: 1.4),
-                ),
+              const SizedBox(height: 4),
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        _groupDigits(account),
+                        style: UnnTheme.monoStyle(size: 28, color: Colors.white)
+                            .copyWith(letterSpacing: 1),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  FilledButton.icon(
+                    onPressed: account == '—'
+                        ? null
+                        : () => ui.copyToClipboard(
+                            context, 'Account number', account,),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: UnnTheme.gold,
+                      foregroundColor: UnnTheme.forest,
+                      minimumSize: const Size(0, 44),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),),
+                      textStyle: const TextStyle(
+                        fontFamily: UnnTheme.font,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    icon: const Icon(Icons.copy_rounded, size: 16),
+                    label: const Text('Copy'),
+                  ),
+                ],
               ),
-              const Divider(),
-              ui.CopyableValue(
-                label: 'Account number',
-                value: _payment.virtualAccountNumber ?? '—',
-                emphasis: true,
-              ),
-              const Divider(),
-              ui.CopyableValue(label: 'Bank', value: _payment.virtualAccountBank ?? '—'),
-              const Divider(),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        Card(
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            children: <Widget>[
               ui.CopyableValue(
                 label: 'Exact amount to send',
                 value: _payment.expectedAmountFormatted,
                 emphasis: true,
               ),
               const Divider(),
-              ui.CopyableValue(label: 'Payment reference', value: _payment.reference),
+              ui.CopyableValue(
+                  label: 'Payment reference',
+                  value: _payment.reference,
+                  mono: true,),
             ],
           ),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 12),
         const ui.NoticeBanner(
           title: 'Send the exact amount',
           message:
@@ -288,173 +449,414 @@ class _PaymentScreenState extends State<PaymentScreen> with WidgetsBindingObserv
               'automatically and you will need to visit the Bursary to sort it out. Your money is '
               'never lost, but it will delay your receipt.',
         ),
-        const SizedBox(height: 14),
-        if (_payment.channels.isNotEmpty) _channels(),
-        const SizedBox(height: 14),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 4),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Icon(Icons.autorenew_rounded, size: 16, color: UnnTheme.muted),
-              SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'This screen updates itself. You can close the app once you have paid — we will '
-                  'notify you when the money arrives.',
-                  style: TextStyle(fontSize: 12.5, color: UnnTheme.muted, height: 1.5),
-                ),
+        if (_payment.channels.isNotEmpty) ...<Widget>[
+          const SizedBox(height: 16),
+          _channels(),
+        ],
+        const SizedBox(height: 16),
+        const Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Icon(Icons.autorenew_rounded, size: 16, color: UnnTheme.muted),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'This screen updates itself. You can close the app once you have paid — we will '
+                'notify you when the money arrives.',
+                style: TextStyle(
+                    fontSize: 12.5, color: UnnTheme.muted, height: 1.5,),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ],
     );
   }
 
   Widget _channels() {
-    const Map<String, (String, IconData)> labels = <String, (String, IconData)>{
-      'transfer': ('Bank transfer', Icons.account_balance_rounded),
-      'ussd': ('USSD', Icons.dialpad_rounded),
-      'card': ('Card', Icons.credit_card_rounded),
-      'pos': ('POS terminal', Icons.point_of_sale_rounded),
-      'bank_branch': ('Bank branch', Icons.storefront_rounded),
-    };
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            const Text(
-              'You can pay any of these ways',
-              style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              'Every method uses the same account number and reference.',
-              style: TextStyle(fontSize: 12.5, color: UnnTheme.muted),
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: _payment.channels.map((String channel) {
-                final (String label, IconData icon) =
-                    labels[channel] ?? (channel, Icons.payments_rounded);
-                return Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: UnnTheme.line),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      Icon(icon, size: 15, color: UnnTheme.muted),
-                      const SizedBox(width: 6),
-                      Text(label, style: const TextStyle(fontSize: 13)),
-                    ],
-                  ),
-                );
-              }).toList(),
-            ),
-          ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        const Text(
+          'You can pay any of these ways',
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
         ),
-      ),
+        const SizedBox(height: 2),
+        const Text(
+          'Every method uses the same account number and reference.',
+          style: TextStyle(fontSize: 12.5, color: UnnTheme.muted),
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: _payment.channels.map((String channel) {
+            final (String label, IconData icon) = channelInfo(channel);
+            return Container(
+              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border.all(color: UnnTheme.line),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Icon(icon, size: 15, color: UnnTheme.green),
+                  const SizedBox(width: 6),
+                  Text(label,
+                      style: const TextStyle(
+                          fontSize: 12.5, fontWeight: FontWeight.w600,),),
+                ],
+              ),
+            );
+          }).toList(),
+        ),
+      ],
     );
   }
 
   Widget _settled() {
+    final String amount =
+        _payment.amountPaidFormatted ?? _payment.expectedAmountFormatted;
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        const ui.NoticeBanner(
-          title: 'Payment received',
-          message: 'Your payment has been applied in full and your receipt is ready.',
-          tone: ui.StatusTone.good,
-        ),
-        const SizedBox(height: 14),
-        Card(
+        ui.ForestCard(
+          ringSize: 220,
+          padding: const EdgeInsets.fromLTRB(20, 28, 20, 26),
           child: Column(
             children: <Widget>[
-              ui.CopyableValue(label: 'Paid', value: _payment.amountPaidFormatted ?? '—'),
-              const Divider(),
-              ui.CopyableValue(label: 'Reference', value: _payment.reference),
-              if (_payment.receipt != null) ...<Widget>[
-                const Divider(),
-                ui.CopyableValue(
-                  label: 'Receipt number',
-                  value: _payment.receipt!.receiptNumber,
+              Container(
+                width: 132,
+                height: 132,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: UnnTheme.gold.withValues(alpha: 0.12),
+                  border:
+                      Border.all(color: UnnTheme.gold.withValues(alpha: 0.25)),
                 ),
-              ],
-              const Divider(),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                child: Row(
-                  children: <Widget>[
-                    const Text('Paid on', style: TextStyle(color: UnnTheme.muted, fontSize: 12)),
-                    const Spacer(),
-                    Text(
-                      formatWat(_payment.paidAt),
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                  ],
+                child: Container(
+                  width: 80,
+                  height: 80,
+                  decoration: const BoxDecoration(
+                      color: UnnTheme.gold, shape: BoxShape.circle,),
+                  child: const Icon(
+                    Icons.check_rounded,
+                    size: 44,
+                    color: UnnTheme.forest,
+                    semanticLabel: 'Success',
+                  ),
                 ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'PAYMENT RECEIVED',
+                style: TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.6,
+                  color: UnnTheme.gold,
+                ),
+              ),
+              const SizedBox(height: 6),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  amount,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 40,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -1.4,
+                    fontFeatures: UnnTheme.tabular,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '${_payment.feeItemName ?? 'This fee'} is fully paid.\nYour receipt is ready.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    color: UnnTheme.onForestMuted, fontSize: 14, height: 1.5,),
               ),
             ],
           ),
         ),
-        const SizedBox(height: 16),
-        FilledButton.icon(
-          onPressed: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => ReceiptScreen(state: widget.state, payment: _payment),
+        const SizedBox(height: 14),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 4),
+            child: Column(
+              children: <Widget>[
+                if (_payment.receipt != null)
+                  ui.DetailRow(
+                    label: 'Receipt number',
+                    value: _payment.receipt!.receiptNumber,
+                    mono: true,
+                  ),
+                ui.DetailRow(
+                    label: 'Reference', value: _payment.reference, mono: true,),
+                ui.DetailRow(
+                    label: 'Paid on', value: formatWat(_payment.paidAt),),
+                ui.DetailRow(
+                  label: 'Paid by',
+                  value: channelInfo(_payment.channel ?? 'transfer').$1,
+                  last: true,
+                ),
+              ],
             ),
           ),
-          icon: const Icon(Icons.receipt_long_rounded),
-          label: const Text('View receipt'),
+        ),
+        const SizedBox(height: 18),
+        if (_payment.receipt != null)
+          FilledButton.icon(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) =>
+                    ReceiptScreen(state: widget.state, payment: _payment),
+              ),
+            ),
+            icon: const Icon(Icons.receipt_long_rounded),
+            label: const Text('View receipt'),
+          ),
+        const SizedBox(height: 6),
+        TextButton(
+          onPressed: () => Navigator.of(context)
+              .popUntil((Route<dynamic> route) => route.isFirst),
+          child: const Text('Back to home'),
         ),
       ],
     );
   }
 
   Widget _underReview() {
+    final double received = double.tryParse(_payment.amountPaid ?? '') ?? 0;
+    final double expected = double.tryParse(_payment.expectedAmount) ?? 0;
+    final double difference = received - expected;
+    final double scale = received > expected ? received : expected;
+
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        ui.NoticeBanner(
-          title: 'Your payment needs attention',
-          tone: ui.StatusTone.warning,
-          message:
-              'We received ${_payment.amountPaidFormatted ?? 'your payment'}, but it does not match '
-              'the ${_payment.expectedAmountFormatted} expected for this fee, so it could not be '
-              'applied automatically.\n\n'
-              'Your money has not been lost. It is recorded against your name. Please visit the '
-              'Bursary with this reference to have it resolved. No receipt is issued until then.',
-        ),
-        const SizedBox(height: 14),
-        Card(
+        Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: UnnTheme.goldSoft,
+            borderRadius: BorderRadius.circular(22),
+          ),
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              ui.CopyableValue(label: 'Amount received', value: _payment.amountPaidFormatted ?? '—'),
-              const Divider(),
-              ui.CopyableValue(label: 'Amount expected', value: _payment.expectedAmountFormatted),
-              const Divider(),
-              ui.CopyableValue(label: 'Reference to quote', value: _payment.reference),
+              const ui.IconTile(
+                icon: Icons.warning_amber_rounded,
+                background: UnnTheme.gold,
+                foreground: Color(0xFF3D2200),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Your payment needs attention',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.4,
+                  color: Color(0xFF3D2200),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'We received ${_payment.amountPaidFormatted ?? 'your payment'}, but it does not '
+                'match the ${_payment.expectedAmountFormatted} expected for this fee, so it could '
+                'not be applied automatically.\n\n'
+                'Your money has not been lost. It is recorded against your name. Please visit the '
+                'Bursary with this reference to have it resolved. No receipt is issued until then.',
+                style: const TextStyle(
+                    fontSize: 13.5, height: 1.5, color: Color(0xFF5C3200),),
+              ),
             ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                _compareRow(
+                  'Amount received',
+                  _payment.amountPaidFormatted ?? '—',
+                  scale == 0 ? 0 : received / scale,
+                  UnnTheme.gold,
+                ),
+                const SizedBox(height: 14),
+                _compareRow(
+                  'Amount expected',
+                  _payment.expectedAmountFormatted,
+                  scale == 0 ? 0 : expected / scale,
+                  UnnTheme.green,
+                ),
+                if (received > 0) ...<Widget>[
+                  const SizedBox(height: 14),
+                  const Divider(),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: Text(
+                          difference < 0 ? 'Short by' : 'Over by',
+                          style: const TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.w700,),
+                        ),
+                      ),
+                      Text(
+                        formatNaira(difference.abs().toStringAsFixed(2)),
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          color: UnnTheme.orange,
+                          fontFeatures: UnnTheme.tabular,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                const Text(
+                  'What to do next',
+                  style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 12),
+                _step(1, 'Visit the Bursary with the reference below.',
+                    current: true,),
+                _step(2, 'They apply it to your fee, or arrange a refund.'),
+                _step(3, 'You are notified here the moment it is done.'),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Card(
+          clipBehavior: Clip.antiAlias,
+          child: ui.CopyableValue(
+            label: 'Reference to quote',
+            value: _payment.reference,
+            mono: true,
           ),
         ),
       ],
     );
   }
+
+  Widget _compareRow(
+      String label, String amount, double fraction, Color color,) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: UnnTheme.muted,
+                ),
+              ),
+            ),
+            Text(
+              amount,
+              style: const TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w800,
+                fontFeatures: UnnTheme.tabular,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(999),
+          child: LinearProgressIndicator(
+            value: fraction.clamp(0, 1).toDouble(),
+            minHeight: 10,
+            color: color,
+            backgroundColor: UnnTheme.divider,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _step(int number, String text, {bool current = false}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Container(
+            width: 26,
+            height: 26,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: current ? UnnTheme.green : UnnTheme.mint,
+              shape: BoxShape.circle,
+            ),
+            child: Text(
+              '$number',
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w800,
+                color: current ? Colors.white : UnnTheme.greenDark,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(top: 3),
+              child: Text(text,
+                  style: const TextStyle(fontSize: 13, height: 1.45),),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
-String _formatRemaining(Duration duration) {
-  if (duration.isNegative) return 'expired';
-  final int hours = duration.inHours;
-  final int minutes = duration.inMinutes.remainder(60);
-  final int seconds = duration.inSeconds.remainder(60);
-  if (hours > 0) return '${hours}h ${minutes}m';
-  if (minutes > 0) return '${minutes}m ${seconds}s';
-  return '${seconds}s';
+/// A channel's label and icon, shared with the receipt screen.
+(String, IconData) channelInfo(String channel) => switch (channel) {
+      'transfer' => ('Bank transfer', Icons.account_balance_outlined),
+      'ussd' => ('USSD', Icons.dialpad_rounded),
+      'card' => ('Card', Icons.credit_card_rounded),
+      'pos' => ('POS terminal', Icons.point_of_sale_rounded),
+      'bank_branch' => ('Bank branch', Icons.storefront_outlined),
+      _ => (channel, Icons.payments_outlined),
+    };
+
+/// 9012345678 -> 901 234 5678, the way Nigerian account numbers are read out.
+String _groupDigits(String value) {
+  if (!RegExp(r'^\d{10}$').hasMatch(value)) return value;
+  return '${value.substring(0, 3)} ${value.substring(3, 6)} ${value.substring(6)}';
+}
+
+/// A countdown as HH:MM:SS.
+String _clock(Duration duration) {
+  if (duration.isNegative) return '00:00:00';
+  String two(int n) => n.toString().padLeft(2, '0');
+  return '${two(duration.inHours)}:${two(duration.inMinutes.remainder(60))}:'
+      '${two(duration.inSeconds.remainder(60))}';
 }

@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'config.dart';
 import 'screens/auth_screens.dart';
-import 'screens/home_screen.dart';
+import 'screens/main_shell.dart';
 import 'services/api_client.dart';
 import 'services/app_state.dart';
 import 'services/push_service.dart';
@@ -75,9 +75,15 @@ class UnnPayApp extends StatelessWidget {
         animation: state,
         builder: (BuildContext context, _) {
           if (state.loading) {
-            return const Scaffold(body: Center(child: CircularProgressIndicator()));
+            return const Scaffold(
+              backgroundColor: UnnTheme.forest,
+              body: Center(
+                  child: CircularProgressIndicator(color: UnnTheme.gold),),
+            );
           }
-          return state.isSignedIn ? HomeScreen(state: state) : SignInScreen(state: state);
+          return state.isSignedIn
+              ? MainShell(state: state)
+              : SignInScreen(state: state);
         },
       ),
     );

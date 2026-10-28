@@ -2,6 +2,26 @@
 
 Commands to run so the app on your phone works. Everything runs on the laptop; the phone talks to it.
 
+## Live version (no laptop needed)
+
+UNN Pay is also deployed on Render, with the Neon database:
+
+- Bursary dashboard: https://unn-pay-admin.onrender.com
+- API: https://unn-pay-api.onrender.com
+- Phone app: `UNN-Pay-live.apk`, one folder up. It talks to the live API out of the box.
+
+Activation codes appear in the Render dashboard → **unn-pay-api** → **Logs** (search for `one-time code`).
+Make the bank "receive" a payment with the same commands as below, using the live address:
+
+```bash
+curl -X POST https://unn-pay-api.onrender.com/api/v1/sandbox/pay -H 'Content-Type: application/json' \
+  -d '{"unn_reference":"UNN2510XXXXXXXX"}'
+```
+
+The free Render plan sleeps after 15 idle minutes; open the dashboard a minute before presenting so it is awake.
+
+The rest of this page is the laptop setup, using `UNN-Pay-demo.apk`.
+
 The app is `UNN-Pay-demo.apk`, one folder up from this project:
 `/home/shack/Documents/Project-deals/Lawrence - School Fees/UNN-Pay-demo.apk`
 

@@ -278,7 +278,8 @@ void main() {
       await tester.pumpWidget(wrap(PaymentScreen(state: state, payment: payment)));
       await tester.pump();
 
-      expect(find.text('9012345678'), findsOneWidget);
+      // Shown grouped the way account numbers are read out; copied without spaces.
+      expect(find.text('901 234 5678'), findsOneWidget);
       expect(find.text('UNN Pay Sandbox Bank'), findsOneWidget);
       expect(find.text('UNN250880118774'), findsOneWidget);
       expect(find.text('₦68,500.00'), findsWidgets);
@@ -306,7 +307,7 @@ void main() {
       expect(find.text('Your payment reference is being generated'), findsOneWidget);
       expect(find.textContaining('nothing is lost'), findsOneWidget);
       // No account number is shown, because there is not one yet.
-      expect(find.text('9012345678'), findsNothing);
+      expect(find.text('901 234 5678'), findsNothing);
 
       await tester.pumpAndSettle(const Duration(milliseconds: 100));
     });
