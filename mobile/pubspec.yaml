@@ -1,0 +1,42 @@
+name: unn_pay
+description: UNN Pay — school fees payment for students of the University of Nigeria, Nsukka.
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  crypto: ^3.0.6
+
+  # Networking. dio is used rather than package:http because certificate
+  # pinning (spec §13.11) needs access to the underlying HttpClient.
+  dio: ^5.7.0
+
+  # Tokens are stored in the platform keychain / keystore, never in
+  # SharedPreferences (spec §13.11).
+  flutter_secure_storage: ^9.2.2
+
+  # Non sensitive local preferences only.
+  shared_preferences: ^2.3.3
+
+  firebase_core: ^3.8.0
+  firebase_messaging: ^15.1.5
+  flutter_local_notifications: ^18.0.1
+
+  intl: ^0.19.0
+  url_launcher: ^6.3.1
+  qr_flutter: ^4.1.0
+  open_filex: ^4.5.0
+  path_provider: ^2.1.5
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
