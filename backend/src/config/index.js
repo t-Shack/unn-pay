@@ -76,6 +76,10 @@ const schema = z
     OUTBOX_CRON: z.string().default('*/1 * * * *'),
     DAILY_MAINTENANCE_CRON: z.string().default('15 1 * * *'),
 
+    // Run the worker's scheduled jobs inside the API process. Only for hosting
+    // with no separate worker service (e.g. a free demo deployment).
+    RUN_WORKER_IN_API: bool(false),
+
     CIRCUIT_BREAKER_FAILURE_THRESHOLD: z.coerce.number().int().positive().default(5),
     CIRCUIT_BREAKER_COOLDOWN_MS: z.coerce.number().int().positive().default(60000),
   })
@@ -106,7 +110,13 @@ const schema = z
   });
 
 function load(env = process.env) {
-  const parsed = schema.safeParse(env);
+  // On Render, fall back to the service's own public URL so a deployment whose
+  // address is assigned at creation does not need it typed in by hand.
+  const source =
+    !env.PUBLIC_BASE_URL && env.RENDER_EXTERNAL_URL
+      ? { ...env, PUBLIC_BASE_URL: env.RENDER_EXTERNAL_URL }
+      : env;
+  const parsed = schema.safeParse(source);
   if (!parsed.success) {
     const details = parsed.error.issues
       .map((issue) => `  - ${issue.path.join('.') || '(root)'}: ${issue.message}`)

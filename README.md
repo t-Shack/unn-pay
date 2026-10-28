@@ -23,7 +23,8 @@ CBN licence UNN does not hold and does not want.
 | `backend/` | Express API and background worker | Complete — 234 tests passing |
 | `admin-dashboard/` | React SPA for the Bursary | Complete, builds clean |
 | `mobile/` | Flutter app for students | Complete — analyzes clean, 41 tests passing, builds an Android APK |
-| `render.yaml` | Deployment for all three services | Complete |
+| `render.yaml` | Live demo deployment (free tier, Neon) | Complete |
+| `render.production.yaml` | Production deployment for all three services | Complete |
 | `RUNBOOK.md` | What to do when something breaks | Complete |
 | `README-PRESENTATION.md` | Commands for a live demo with the Android app | Complete |
 
@@ -232,7 +233,16 @@ after it, so detecting a stolen token revoked nothing.
 
 ## Deployment
 
-`render.yaml` provisions the database, the API, the worker and the dashboard.
+There are two Render blueprints:
+
+- **`render.yaml` — the live demo.** Free tier, Neon PostgreSQL, sandbox bank.
+  The worker's jobs run inside the API (`RUN_WORKER_IN_API=true`) because the
+  free tier has no background workers. Migrations and the demo seed run in the
+  build command. Activation codes appear in the API service's log, and payments
+  are made with the `/api/v1/sandbox/pay` route. No real money, ever.
+- **`render.production.yaml` — real fee collection.** Paid API and worker as
+  separate services, Render database, migrations as a pre-deploy command.
+
 See `RUNBOOK.md` for go-live steps and for what to do when something breaks.
 
 Three points that are easy to get wrong:

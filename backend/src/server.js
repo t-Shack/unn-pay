@@ -36,6 +36,14 @@ async function start() {
   server.keepAliveTimeout = 65000;
   server.headersTimeout = 70000;
 
+  // Free hosting tiers have no background worker service, so the scheduler can
+  // run inside the API instead. Off by default: with a worker service of its own,
+  // a slow sweep never shares a process with a student's request.
+  if (config.RUN_WORKER_IN_API) {
+    logger.warn('RUN_WORKER_IN_API is set; background jobs run inside the API process');
+    await require('./worker').startScheduler();
+  }
+
   return server;
 }
 
@@ -58,6 +66,10 @@ async function shutdown(signal) {
     if (server) {
       await new Promise((resolve) => server.close(resolve));
       logger.info('http server closed');
+    }
+    if (config.RUN_WORKER_IN_API) {
+      await require('./worker').stopScheduler();
+      logger.info('in process worker stopped');
     }
     await sentry.flush();
     await sequelize.close();

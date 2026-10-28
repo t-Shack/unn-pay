@@ -68,10 +68,12 @@ const jobs = {
   daily: guard('daily_maintenance', () => runDailyMaintenance()),
 };
 
-async function start() {
-  sentry.init({ serviceName: 'unn-pay-worker' });
-
-  await assertDatabaseConnection();
+/**
+ * Schedule the jobs. Used by the standalone worker below, and by the API itself
+ * when RUN_WORKER_IN_API is set (a free hosting tier with no background worker
+ * service). The database connection is the caller's concern.
+ */
+async function startScheduler() {
   logger.info(
     {
       adapter: config.BANK_ADAPTER,
@@ -92,14 +94,11 @@ async function start() {
   logger.info('worker ready');
 }
 
-async function shutdown(signal) {
-  if (shuttingDown) return;
+/** Stop scheduling, and let an in flight job finish rather than killing it mid settlement. */
+async function stopScheduler() {
   shuttingDown = true;
-  logger.info({ signal }, 'worker shutting down');
-
   for (const task of tasks) task.stop();
 
-  // Let an in flight job finish rather than killing it mid settlement.
   const deadline = Date.now() + 25000;
   while (running.size > 0 && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 200));
@@ -107,6 +106,19 @@ async function shutdown(signal) {
   if (running.size > 0) {
     logger.warn({ jobs: [...running] }, 'shutting down with jobs still running');
   }
+}
+
+async function start() {
+  sentry.init({ serviceName: 'unn-pay-worker' });
+  await assertDatabaseConnection();
+  await startScheduler();
+}
+
+async function shutdown(signal) {
+  if (shuttingDown) return;
+  logger.info({ signal }, 'worker shutting down');
+
+  await stopScheduler();
 
   await sentry.flush();
   await sequelize.close();
@@ -114,18 +126,20 @@ async function shutdown(signal) {
   process.exit(0);
 }
 
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
-process.on('unhandledRejection', (reason) => {
-  logger.fatal({ err: reason }, 'unhandled rejection in worker');
-  sentry.captureException(reason instanceof Error ? reason : new Error(String(reason)));
-});
-
+// Process level handlers belong only to the standalone worker. When the API
+// hosts the scheduler, the API's own handlers own shutdown.
 if (require.main === module) {
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('unhandledRejection', (reason) => {
+    logger.fatal({ err: reason }, 'unhandled rejection in worker');
+    sentry.captureException(reason instanceof Error ? reason : new Error(String(reason)));
+  });
+
   start().catch((error) => {
     logger.fatal({ err: error.message, stack: error.stack }, 'worker failed to start');
     process.exit(1);
   });
 }
 
-module.exports = { start, shutdown, jobs };
+module.exports = { start, shutdown, startScheduler, stopScheduler, jobs };

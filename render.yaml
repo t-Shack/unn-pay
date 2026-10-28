@@ -1,209 +1,73 @@
-# UNN Pay — Render deployment (spec §12).
+# UNN Pay — Render LIVE DEMO deployment (free tier, Neon database).
 #
-# Three services and one database:
-#   unn-pay-api        the Express API
-#   unn-pay-worker     reconciliation, outbox drain, daily maintenance
-#   unn-pay-admin      the Bursary dashboard, a static site
+# The production layout (paid API, separate worker, Render database) is in
+# render.production.yaml. This one is a public demonstration:
 #
-# Two things here are deliberate and must not be "simplified":
+#   unn-pay-api     the Express API, with the worker's jobs running in process
+#   unn-pay-admin   the Bursary dashboard, a static site
+#   database        Neon PostgreSQL, supplied as DATABASE_URL
 #
-#  1. The worker is a separate service, not a setInterval inside the API. If the
-#     API restarts mid sweep, the sweep must not be lost.
-#  2. Migrations run as a release command, never at boot. Two instances starting
-#     together would otherwise race each other through the same migration.
+# What makes it a demo, and why each is acceptable here and nowhere else:
 #
-# Neither service may be on the free tier. Free instances sleep after inactivity,
-# and a sleeping API means a delayed bank webhook — which is precisely the
-# failure this system exists to prevent.
-
-databases:
-  - name: unn-pay-db
-    databaseName: unnpay
-    user: unnpay
-    plan: standard
-    postgresMajorVersion: "16"
-    ipAllowList: []
+#  - BANK_ADAPTER is sandbox and NODE_ENV is development. No real money exists in
+#    this deployment, so the sandbox simulation routes are mounted on purpose:
+#    they are how a payment is made during a demonstration. Activation codes are
+#    printed to the service log instead of emailed.
+#  - The free tier has no background worker service, so RUN_WORKER_IN_API runs
+#    the scheduler inside the API. The free API sleeps after 15 idle minutes; the
+#    first request after that takes about a minute while it wakes.
+#  - Migrations and the (idempotent) demo seed run in the build command, since
+#    the free tier has no pre-deploy command.
+#
+# None of this is suitable for real fees. Use render.production.yaml for that.
 
 services:
-  # --- API -------------------------------------------------------------------
+  # --- API (and in process worker) -------------------------------------------
   - type: web
     name: unn-pay-api
     runtime: node
-    plan: standard
-    region: frankfurt
+    plan: free
+    region: virginia # same AWS region as the Neon database (us-east-1)
     branch: main
     rootDir: backend
-    buildCommand: npm ci --omit=dev
-    preDeployCommand: npx sequelize-cli db:migrate
+    buildCommand: npm ci --omit=dev && npm run migrate && npm run seed:demo
     startCommand: npm start
     healthCheckPath: /health
     autoDeploy: true
     envVars:
       - key: NODE_ENV
-        value: production
+        value: development
+      - key: NODE_VERSION
+        value: "22"
       - key: SERVICE_NAME
         value: unn-pay-api
-      - key: DATABASE_URL
-        fromDatabase:
-          name: unn-pay-db
-          property: connectionString
-      - key: DATABASE_SSL
-        value: "true"
-      - key: DATABASE_POOL_MAX
-        value: "10"
-
-      # Generated once by Render and then shared with the worker, so both
-      # processes verify the same tokens and sign the same receipts.
-      - key: JWT_ACCESS_SECRET
-        generateValue: true
-      - key: JWT_REFRESH_SECRET
-        generateValue: true
-      - key: RECEIPT_SIGNING_SECRET
-        generateValue: true
-
-      - key: BANK_ADAPTER
-        value: sandbox # switch to "gtbank" when credentials arrive (§5.1, §16)
-      - key: BANK_WEBHOOK_SECRET
-        sync: false # set by hand; must match what the bank was given
-      - key: BANK_WEBHOOK_TOLERANCE_SECONDS
-        value: "300"
-
-      # GTBank only. Read by GTBankAdapter and by nothing else.
-      - key: GTBANK_API_BASE_URL
-        sync: false
-      - key: GTBANK_API_KEY
-        sync: false
-      - key: GTBANK_MERCHANT_ID
-        sync: false
-
-      - key: RESEND_API_KEY
-        sync: false
-      - key: EMAIL_FROM
-        value: UNN Pay <no-reply@pay.unn.edu.ng>
-      - key: BURSARY_ALERT_EMAIL
-        sync: false
-      - key: FIREBASE_SERVICE_ACCOUNT_JSON
-        sync: false
-
-      - key: PAYMENT_REFERENCE_TTL_HOURS
-        value: "24"
-      - key: UNAPPLIED_RESOLUTION_DAYS
-        value: "90"
-
-      - key: PUBLIC_BASE_URL
-        value: https://pay.unn.edu.ng
-      - key: ADMIN_ORIGINS
-        value: https://bursary.pay.unn.edu.ng
-      - key: APP_SCHEMES
-        value: unnpay
-
-      - key: SENTRY_DSN
-        sync: false
-      - key: SENTRY_TRACES_SAMPLE_RATE
-        value: "0.1"
       - key: LOG_LEVEL
         value: info
 
-  # --- Worker ----------------------------------------------------------------
-  - type: worker
-    name: unn-pay-worker
-    runtime: node
-    plan: standard
-    region: frankfurt
-    branch: main
-    rootDir: backend
-    buildCommand: npm ci --omit=dev
-    startCommand: npm run start:worker
-    autoDeploy: true
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: SERVICE_NAME
-        value: unn-pay-worker
+      # The Neon connection string, pasted in when the Blueprint is created.
       - key: DATABASE_URL
-        fromDatabase:
-          name: unn-pay-db
-          property: connectionString
+        sync: false
       - key: DATABASE_SSL
         value: "true"
-      # Smaller pool: the worker is a handful of scheduled jobs, not a fleet of
-      # concurrent requests, and it must never starve the API of connections.
       - key: DATABASE_POOL_MAX
         value: "5"
 
-      # Every secret below is taken from the API service, so the two processes
-      # cannot drift apart. A worker signing receipts with a different secret
-      # would produce receipts that fail their own verification.
       - key: JWT_ACCESS_SECRET
-        fromService:
-          type: web
-          name: unn-pay-api
-          envVarKey: JWT_ACCESS_SECRET
+        generateValue: true
       - key: JWT_REFRESH_SECRET
-        fromService:
-          type: web
-          name: unn-pay-api
-          envVarKey: JWT_REFRESH_SECRET
+        generateValue: true
       - key: RECEIPT_SIGNING_SECRET
-        fromService:
-          type: web
-          name: unn-pay-api
-          envVarKey: RECEIPT_SIGNING_SECRET
-      - key: BANK_ADAPTER
-        fromService:
-          type: web
-          name: unn-pay-api
-          envVarKey: BANK_ADAPTER
-      - key: BANK_WEBHOOK_SECRET
-        fromService:
-          type: web
-          name: unn-pay-api
-          envVarKey: BANK_WEBHOOK_SECRET
-      - key: GTBANK_API_BASE_URL
-        fromService:
-          type: web
-          name: unn-pay-api
-          envVarKey: GTBANK_API_BASE_URL
-      - key: GTBANK_API_KEY
-        fromService:
-          type: web
-          name: unn-pay-api
-          envVarKey: GTBANK_API_KEY
-      - key: GTBANK_MERCHANT_ID
-        fromService:
-          type: web
-          name: unn-pay-api
-          envVarKey: GTBANK_MERCHANT_ID
-      - key: RESEND_API_KEY
-        fromService:
-          type: web
-          name: unn-pay-api
-          envVarKey: RESEND_API_KEY
-      - key: EMAIL_FROM
-        fromService:
-          type: web
-          name: unn-pay-api
-          envVarKey: EMAIL_FROM
-      - key: BURSARY_ALERT_EMAIL
-        fromService:
-          type: web
-          name: unn-pay-api
-          envVarKey: BURSARY_ALERT_EMAIL
-      - key: FIREBASE_SERVICE_ACCOUNT_JSON
-        fromService:
-          type: web
-          name: unn-pay-api
-          envVarKey: FIREBASE_SERVICE_ACCOUNT_JSON
-      - key: PUBLIC_BASE_URL
-        fromService:
-          type: web
-          name: unn-pay-api
-          envVarKey: PUBLIC_BASE_URL
-      - key: UNAPPLIED_RESOLUTION_DAYS
-        value: "90"
-      - key: PAYMENT_REFERENCE_TTL_HOURS
-        value: "24"
+        generateValue: true
 
+      - key: BANK_ADAPTER
+        value: sandbox
+      - key: BANK_WEBHOOK_SECRET
+        generateValue: true
+      - key: BANK_WEBHOOK_TOLERANCE_SECONDS
+        value: "300"
+
+      - key: RUN_WORKER_IN_API
+        value: "true"
       - key: RECONCILE_CRON
         value: "*/10 * * * *"
       - key: OUTBOX_CRON
@@ -211,13 +75,17 @@ services:
       - key: DAILY_MAINTENANCE_CRON
         value: "15 1 * * *"
 
-      - key: SENTRY_DSN
-        fromService:
-          type: web
-          name: unn-pay-api
-          envVarKey: SENTRY_DSN
-      - key: LOG_LEVEL
-        value: info
+      - key: PAYMENT_REFERENCE_TTL_HOURS
+        value: "24"
+      - key: UNAPPLIED_RESOLUTION_DAYS
+        value: "90"
+
+      # PUBLIC_BASE_URL is left unset: the API falls back to Render's
+      # RENDER_EXTERNAL_URL, its own public https address.
+      - key: ADMIN_ORIGINS
+        value: https://unn-pay-admin.onrender.com
+      - key: APP_SCHEMES
+        value: unnpay
 
   # --- Admin dashboard -------------------------------------------------------
   - type: web
@@ -230,7 +98,7 @@ services:
     autoDeploy: true
     envVars:
       - key: VITE_API_BASE_URL
-        value: https://pay.unn.edu.ng
+        value: https://unn-pay-api.onrender.com
     routes:
       # A single page app: every unknown path is handled by the router, not 404.
       - type: rewrite
