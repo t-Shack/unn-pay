@@ -2,7 +2,7 @@
 
 Commands to run so the app on your phone works. Everything runs on the laptop; the phone talks to it.
 
-## Live version (no laptop needed)
+## Live version
 
 UNN Pay is also deployed on Render, with the Neon database:
 
@@ -13,9 +13,14 @@ UNN Pay is also deployed on Render, with the Neon database:
 Activation codes appear in the Render dashboard → **unn-pay-api** → **Logs** (search for `one-time code`).
 Make the bank "receive" a payment with the same commands as below, using the live address:
 
-```bash
+```bash on linux
 curl -X POST https://unn-pay-api.onrender.com/api/v1/sandbox/pay -H 'Content-Type: application/json' \
   -d '{"unn_reference":"UNN2510XXXXXXXX"}'
+```
+```powershell on windows
+Invoke-RestMethod -Method Post -Uri "https://unn-pay-api.onrender.com/api/v1/sandbox/pay" `
+  -ContentType "application/json" `
+  -Body '{"unn_reference":"UNN261193483185"}'
 ```
 
 The free Render plan sleeps after 15 idle minutes; open the dashboard a minute before presenting so it is awake.
